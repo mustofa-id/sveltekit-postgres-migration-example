@@ -16,7 +16,19 @@ pnpm migration migrate
 
 ## Developing
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+Run postgres server using Docker:
+
+```bash
+docker compose up -d
+```
+
+Run migration:
+
+```bash
+pnpm migration migrate
+```
+
+Start a development server:
 
 ```bash
 pnpm dev
