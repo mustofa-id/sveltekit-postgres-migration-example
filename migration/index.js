@@ -37,6 +37,12 @@ function create(name) {
 	/** @type {Set<string>} */
 	const existingFiles = new Set();
 
+	/** @param {string} command */
+	function execFmt(command) {
+		const output = execSync(command);
+		return output.toString().trim().split('\n');
+	}
+
 	/** @param {string} branch */
 	function pushBranchFiles(branch) {
 		for (const file of execFmt(`git diff ${branch} --name-only ./migration/sql/`)) {
@@ -85,14 +91,65 @@ function create(name) {
  * Running migrations
  */
 async function migrate() {
-	console.log(`running migration...`);
-}
+	// we may no need vite to be installed on production env
+	const vite = await import('vite')?.catch((e) => console.warn('> migration:', e?.message));
+	const { default: postgres } = await import('postgres');
 
-/**
- * @param {string} command
- * @returns {string[]}
- */
-function execFmt(command) {
-	const output = execSync(command);
-	return output.toString().trim().split('\n');
+	const DB_URI = vite?.loadEnv?.('production', '.', '')?.DB_URI || process.env.DB_URI;
+	if (!DB_URI) throw new Error('"DB_URI" must be connection string');
+
+	const sql = postgres(DB_URI, { onnotice: (n) => console.info(`> ${n.message}`) });
+
+	await sql`
+		create table if not exists _migration (
+			id varchar not null primary key,
+			executed_at timestamptz not null default now()
+		)
+	`;
+
+	await sql.begin(async (sql) => {
+		await sql`
+			lock table _migration
+			in access exclusive mode
+		`;
+
+		// check latest migration
+		const [latest] = await sql`
+			select id, executed_at from _migration
+			order by executed_at desc limit 1
+		`;
+
+		// log latest migration info
+		if (latest) {
+			console.info(
+				`~ latest migration: "${latest.id}" at "${latest.executed_at.toLocaleString()}"`
+			);
+		} else {
+			console.info(`~ no previous migration found`);
+		}
+
+		const existingMigrations = await sql`
+			select id from _migration
+			order by executed_at
+		`.then((r) => r.map((m) => /** @type {string} */ (m.id)));
+
+		const sqlFiles = readdirSync(SQL_DIR).sort();
+		let totalExecution = 0;
+
+		// run sql migration files
+		for (const file of sqlFiles) {
+			if (!/^\d{4}/.test(file)) throw new Error('file must be starts with 4 digits');
+			if (!file.endsWith('.sql')) throw new Error('file extension must be .sql');
+			if (existingMigrations.includes(file)) continue;
+
+			console.log(`~ running migration "${file}"...`);
+			await sql.file(new URL(`${SQL_DIR}/${file}`));
+			await sql`insert into _migration (id) values (${file})`;
+			totalExecution++;
+		}
+
+		console.log(`> ${totalExecution} of ${sqlFiles.length} migrations executed`);
+	});
+
+	await sql.end();
 }

@@ -1,0 +1,17 @@
+services:
+  db:
+    image: postgres:15.3
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      TZ: 'Asia/Jakarta'
+      PGTZ: 'GMT+7'
+    volumes:
+      - db_dev:/var/lib/postgresql/data
+    ports:
+      - 5432:5432  
+volumes:
+  db_dev:
+    external: false
