@@ -4,6 +4,8 @@
 
 Create new migration:
 
+> This command will generate a new unique migration file by scanning through all git branches, including remote branches.
+
 ```bash
 pnpm migration create some-migration-name
 ```
